@@ -35,13 +35,15 @@
 
   <title>TBP</title>
 </head>
-<body class="dark-mode"></body>
-
-<script>
+<body class="dark-mode">
+  <p class="text-center">The config is saved at "<%- resPath %>"</p>
+  
+</body>
+<script type="text/javascript">
   Swal.fire({
     icon: "success",
     title: "Successfully logged in",
-    footer: "The program will automatically exit in 5 seconds please reopen after that",
+    footer: "The program will auto close in 3 seconds please reopen when it does",
     timer: 5000
   })
 </script>

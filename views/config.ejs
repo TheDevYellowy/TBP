@@ -39,6 +39,12 @@
     <div class="card">
       <div class="card-body login-card-body">
         <form role="form" action="/addData" method="post">
+          <button
+            type="submit"
+            name="update"
+            class="btn btn-outline-success"
+            style="width: 100%; margin-bottom: 10px;"
+          >Update Redeems</button>
           <table style="width: 100%;">
             <tbody>
               <% a.forEach(reward => { %>
@@ -46,14 +52,23 @@
                   <td><%- reward.title %></td>
                   <td>
                     <select name="<%- reward.id %>" class="select2-dark" style="width: 50%;">
+                      <% if(reward.keys[0] == 'tap') {%>
+                        <option value="tap" selected>Tap Keys</option>
+                        <option value="keybind">Hold Keys</option>
+                      <% } else { %>
+                        <option value="tap">Tap Keys</option>
+                        <option value="keybind" selected>Hold Keys</option>
+                      <% } %>
+                    </select>
+                    <select name="<%- reward.id %>" class="select2-dark" style="width: 50%;">
                       <% keys.forEach(temp => { %>
-                        <% if(temp[1] == Number(reward.keys[0])) { %> <option value="<%- temp[1] %>" selected><%- temp[0] %></option>  <%}%>
+                        <% if(temp[1] == Number(reward.keys[1])) { %> <option value="<%- temp[1] %>" selected><%- temp[0] %></option>  <%}%>
                         <option value="<%- temp[1] %>"><%- temp[0] %></option>
                       <% }) %>
                     </select>
                     <select name="<%- reward.id %>" class="select2-dark" style="width: 50%;">
                       <% keys.forEach(temp => { %>
-                        <% if(temp[1] == Number(reward.keys[1])) { %> <option value="<%- temp[1] %>" selected><%- temp[0] %></option>  <%}%>
+                        <% if(temp[1] == Number(reward.keys[2])) { %> <option value="<%- temp[1] %>" selected><%- temp[0] %></option>  <%}%>
                         <option value="<%- temp[1] %>"><%- temp[0] %></option>
                       <% }) %>
                     </select>
@@ -62,9 +77,16 @@
                     <button
                       type="submit"
                       name="edit[<%- reward.id %>]"
-                      style="background: none; color: green; border: none;"
+                      style="background: none; color: orange; border: none;"
                     >
                       <i class="fa-solid fa-pencil"></i>
+                    </button>
+                    <button
+                      type="submit"
+                      name="delete[<%- reward.id %>]"
+                      style="background: none; color: red; border: none;"
+                    >
+                      <i class="fa-solid fa-trash-can"></i>
                     </button>
                   </td>
                 </tr>
@@ -73,6 +95,10 @@
                 <tr>
                   <td><%- reward.title %></td>
                   <td>
+                    <select name="<%- reward.id %>" class="select2-dark" style="width: 50%;">
+                      <option value="tap" selected>Tap Keys</option>
+                      <option value="keybind">Hold Keys</option>
+                    </select>
                     <select name="<%- reward.id %>" class="select2-dark" style="width: 50%;">
                       <% keys.forEach(temp => { %> <option value="<%- temp[1] %>"><%- temp[0] %></option> <% }) %>
                     </select>

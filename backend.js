@@ -12,11 +12,15 @@ const resPath = process.resourcesPath;
  * @typedef userData
  * @property {string} userId
  * @property {string} token
+ * @property {string} vtsToken
  * @property {string} refresh
  * @property {Record<string, string[]>} redeems
+ * @property {any[]} rewards
  */
 
 const { Key } = require('@nut-tree/nut-js');
+const EventEmitter = require('events');
+
 const keys = [
   ['none', null],
   ['a', Key.A],
@@ -73,115 +77,146 @@ const keys = [
   ['f12', Key.F12]
 ]
 
-/** @param {?API} api */
-module.exports = (api = null) => {
-  app
-    .use(express.json())
-    .use(express.urlencoded({ extended: true }))
-    .engine('html', require('ejs').renderFile)
-    .set('view engine', 'ejs')
-    .set('views', path.join(__dirname, 'views'))
-    .get('/getInfo', (req, res) => {
-      res.render('getInfo', {
-        twitchURL: `https://id.twitch.tv/oauth2/authorize?force_verify=true&response_type=code&client_id=${config['client-id']}&client_secret=${config['client-secret']}&redirect_uri=${encodeURI('http://localhost:6060/api')}&scope=${encodeURI(config.scopes.join(' '))}`
+module.exports = class API extends EventEmitter {
+  constructor(api = null) {
+    super();
+    /** @type {API | null} */
+    this.api = api;
+
+    this.app = app;
+    this.app
+      .use(express.json())
+      .use(express.urlencoded({ extended: true }))
+      .engine('html', require('ejs').renderFile)
+      .set('view engine', 'ejs')
+      .set('views', path.join(__dirname, 'views'))
+      .get('/getInfo', (req, res) => {
+        res.render('getInfo', {
+          twitchURL: `https://id.twitch.tv/oauth2/authorize?force_verify=true&response_type=code&client_id=${config['client-id']}&client_secret=${config['client-secret']}&redirect_uri=${encodeURI('http://localhost:6060/api')}&scope=${encodeURI(config.scopes.join(' '))}`
+        });
+      })
+      .get('/quit', (req, res) => {
+        // this.emit('start');
+        res.render('quit', { resPath });
+
+        setTimeout(() => process.exit(), 3000);
+      })
+      .get('/config', async (req, res) => {
+        if(!fs.existsSync(`${resPath}/userData.json`)) res.redirect('/getInfo');
+        /** @type {userData} */
+        const data = require(`${resPath}/userData.json`);
+        var rewards;
+        if(data.rewards?.length < 1 || typeof data.rewards == 'undefined') {
+          rewards = data.rewards = await api?.get(`channel_points/custom_rewards?broadcaster_id=${data.userId}`);
+          fs.writeFileSync(`${resPath}/userData.json`, JSON.stringify(data));
+        } else {
+          rewards = data.rewards;
+        }
+
+        if(typeof rewards == 'string' || typeof rewards == 'undefined') {}
+        else {
+          const a = [];
+          const b = [];
+
+          rewards.data.forEach(reward => {
+            if(data.redeems[reward.id]) { a.push({ ...reward, keys: data.redeems[reward.id] }) }
+            else b.push(reward);
+          });
+
+          res.render('config', {
+            a,b,keys
+          });
+        }
+      })
+      .get('/api', async (req, res) => {
+        let temp = {};
+        if (fs.existsSync(`${resPath}/userData.json`)) temp = JSON.parse(fs.readFileSync(`${resPath}/userData.json`));
+
+        if (req.query.error) return res.redirect(req.originalUrl);
+        if (!req.query.code) return res.redirect(req.originalUrl);
+        
+        const params = new URLSearchParams();
+        params.set('client_id', config['client-id']);
+        params.set('client_secret', config['client-secret']);
+        params.set('code', req.query.code);
+        params.set('redirect_uri', 'http://localhost:6060/api');
+        params.set('grant_type', 'authorization_code');
+
+        const resp = await fetch('https://id.twitch.tv/oauth2/token', {
+          method: "POST",
+          body: params.toString(),
+          headers: {
+            'Content-Type': "application/x-www-form-urlencoded"
+          }
+        }).catch(() => { res.redirect(req.originalUrl) });
+
+        const token = await resp.json();
+        console.log({ token });
+        if (token.error || !token.access_token) return res.redirect(req.originalUrl);
+
+        const data = await (await fetch(`https://api.twitch.tv/helix/users`, {
+          headers: {
+            'Authorization': `Bearer ${token.access_token}`,
+            'Client-Id': config['client-id'],
+          }
+        })).json();
+
+        console.log({ data: data.data });
+
+        const userData = {
+          ...temp,
+          token: token.access_token,
+          refresh: token.refresh_token,
+          userId: data.data[0].id,
+          redeems: {},
+          rewards: []
+        }
+
+        fs.writeFileSync(`${resPath}/userData.json`, JSON.stringify(userData));
+
+        res.redirect('/quit');
+      })
+      .post('/addData', async (req, res) => {
+        /** @type {userData} */
+        let data = require(`${resPath}/userData.json`);
+        const body = req.body;
+        console.log(body);
+
+        if('update' in body) {
+          data.rewards = await api?.get(`channel_points/custom_rewards?broadcaster_id=${data.userId}`);
+        } else {
+          if('add' in body) {
+            const key = Object.keys(body.add)[0];
+            let arrNums = body[key];
+
+            data.redeems[key] = arrNums;
+          }
+
+          if('edit' in body) {
+            const key = Object.keys(body.edit)[0];
+            let arrNums = body[key];
+
+            data.redeems[key] = arrNums;
+          }
+
+          if('delete' in body) {
+            const key = Object.keys(body.delete)[0];
+
+            delete data.redeems[key];
+          }
+        }
+
+        fs.writeFileSync(`${resPath}/userData.json`, JSON.stringify(data));
+
+        res.redirect('/config');
+      })
+      .listen(6060);
+
+    if(this.api !== null){ 
+      this.api.on('refreshToken', (token, _) => {
+        let temp = require(`${resPath}/userData.json`);
+        fs.writeFileSync(`${resPath}/userData.json`, JSON.stringify({ ...temp, token: token }));
       });
-    })
-    .get('/quit', (req, res) => {
-      res.render('quit');
-
-      setTimeout(() => process.exit(), 5500);
-    })
-    .get('/config', async (req, res) => {
-      /** @type {userData} */
-      const data = require(`${resPath}/userData.json`);
-      const rewards = await api?.get(`channel_points/custom_rewards?broadcaster_id=${data.userId}`);
-
-      if(typeof rewards == 'string' || typeof rewards == 'undefined') {}
-      else {
-        const a = [];
-        const b = [];
-
-        rewards.data.forEach(reward => {
-          if(data.redeems[reward.id]) { a.push({ ...reward, keys: data.redeems[reward.id] }) }
-          else b.push(reward);
-        });
-
-        res.render('config', {
-          a,b,keys
-        });
-      }
-    })
-    .get('/api', async (req, res) => {
-      if (req.query.error) return res.redirect(req.originalUrl);
-      if (!req.query.code) return res.redirect(req.originalUrl);
-      
-      const params = new URLSearchParams();
-      params.set('client_id', config['client-id']);
-      params.set('client_secret', config['client-secret']);
-      params.set('code', req.query.code);
-      params.set('redirect_uri', 'http://localhost:6060/api');
-      params.set('grant_type', 'authorization_code');
-
-      const resp = await fetch('https://id.twitch.tv/oauth2/token', {
-        method: "POST",
-        body: params.toString(),
-        headers: {
-          'Content-Type': "application/x-www-form-urlencoded"
-        }
-      }).catch(() => { res.redirect(req.originalUrl) });
-
-      const token = await resp.json();
-      console.log({ token });
-      if (token.error || !token.access_token) return res.redirect(req.originalUrl);
-
-      const data = await (await fetch(`https://api.twitch.tv/helix/users`, {
-        headers: {
-          'Authorization': `Bearer ${token.access_token}`,
-          'Client-Id': config['client-id'],
-        }
-      })).json();
-
-      console.log({ data: data.data });
-
-      const userData = {
-        token: token.access_token,
-        refresh: token.refresh_token,
-        userId: data.data[0].id,
-        redeems: {}
-      }
-
-      fs.writeFileSync(`${resPath}/userData.json`, JSON.stringify(userData));
-
-      res.redirect('/quit');
-    })
-    .post('/addData', async (req, res) => {
-      /** @type {userData} */
-      let data = require(`${resPath}/userData.json`);
-      const body = req.body;
-      console.log(body)
-
-      if('add' in body) {
-        const key = Object.keys(body.add)[0];
-        let arrNums = body[key];
-
-        data.redeems[key] = arrNums;
-      }
-
-      if('edit' in body) {
-        const key = Object.keys(body.edit)[0];
-        let arrNums = body[key];
-
-        data.redeems[key] = arrNums;
-      }
-
-      fs.writeFileSync(`${resPath}/userData.json`, JSON.stringify(data));
-
-      res.redirect('/config');
-    })
-    .listen(6060);
-
-  api?.on('refreshToken', (token, _) => {
-    let temp = require(`${resPath}/userData.json`);
-    fs.writeFileSync(`${resPath}/userData.json`, JSON.stringify({ ...temp, token: token }));
-  });
+    }
+  }
 }
